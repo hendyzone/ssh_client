@@ -6,49 +6,83 @@
 use russh::client;
 use russh::keys::ssh_key;
 use russh::ChannelMsg;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
-/// 客户端回调处理器。
-///
-/// russh 0.61 的 `client::Handler` 已经是原生 async trait（`impl Future` 形式），
-/// 不再需要 `#[async_trait]` 宏。
-pub struct Client;
+/// 客户端回调处理器，携带 TOFU 指纹校验状态。
+pub struct Client {
+    /// 连接前从 known_hosts 查出的期望指纹；None 表示首次连接（TOFU）。
+    expected_fp: Option<String>,
+    /// 回传实际服务器公钥指纹给 connect_password。
+    actual_fp: Arc<Mutex<Option<String>>>,
+    /// 指纹不匹配标志，用于把 connect 失败语义化为"指纹变更"。
+    mismatch: Arc<Mutex<bool>>,
+}
 
 impl client::Handler for Client {
     type Error = russh::Error;
 
-    /// 阶段一：接受任意服务器公钥（指纹校验留到阶段二/三）。
-    ///
-    /// 0.61 中公钥类型为 `russh::keys::ssh_key::PublicKey`
-    /// （早期版本是 `russh_keys::key::PublicKey`，russh-keys 现已并入 russh::keys）。
+    /// TOFU 校验：计算服务器公钥 SHA256 指纹并回传；
+    /// 已有期望指纹且不符 → 设 mismatch 标志并返回 Ok(false)（russh 会在认证前断开，密码不外泄）；
+    /// 首次（expected=None）或匹配 → Ok(true)。
     async fn check_server_key(
         &mut self,
-        _server_public_key: &ssh_key::PublicKey,
+        server_public_key: &ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        let fp = server_public_key
+            .fingerprint(ssh_key::HashAlg::Sha256)
+            .to_string();
+        *self.actual_fp.lock().unwrap() = Some(fp.clone());
+        match &self.expected_fp {
+            Some(expected) if expected != &fp => {
+                *self.mismatch.lock().unwrap() = true;
+                Ok(false)
+            }
+            _ => Ok(true),
+        }
     }
 }
 
-/// 用密码建立一个已认证的 SSH 连接，返回可复用的会话句柄。
+/// 用密码建立已认证的 SSH 连接，附带 TOFU 指纹校验。
 ///
-/// Task 10 将基于返回的 `client::Handle<Client>` 打开 PTY 通道。
+/// `expected_fp`：known_hosts 中该主机的已知指纹；None 表示首次连接。
+/// 返回 `(已认证句柄, 服务器实际公钥指纹)`；指纹变更时返回语义化错误。
 pub async fn connect_password(
     addr: &str,
     port: u16,
     username: &str,
     password: &str,
-) -> Result<client::Handle<Client>, russh::Error> {
+    expected_fp: Option<String>,
+) -> Result<(client::Handle<Client>, String), String> {
     let config = Arc::new(client::Config::default());
-    let mut handle = client::connect(config, (addr, port), Client).await?;
+    let actual_fp = Arc::new(Mutex::new(None));
+    let mismatch = Arc::new(Mutex::new(false));
+    let client = Client {
+        expected_fp,
+        actual_fp: actual_fp.clone(),
+        mismatch: mismatch.clone(),
+    };
 
-    // 0.61 的 authenticate_password 返回 Result<AuthResult, Error>，
-    // 用 .success() 判断是否认证成功（早期版本直接返回 Result<bool>）。
-    let auth = handle.authenticate_password(username, password).await?;
+    let mut handle = match client::connect(config, (addr, port), client).await {
+        Ok(h) => h,
+        Err(e) => {
+            if *mismatch.lock().unwrap() {
+                return Err("主机公钥指纹已变更，可能存在中间人攻击风险，已拒绝连接".to_string());
+            }
+            return Err(e.to_string());
+        }
+    };
+
+    let auth = handle
+        .authenticate_password(username, password)
+        .await
+        .map_err(|e| e.to_string())?;
     if !auth.success() {
-        return Err(russh::Error::NotAuthenticated);
+        return Err("认证失败：用户名或密码错误".to_string());
     }
-    Ok(handle)
+
+    let fp = actual_fp.lock().unwrap().clone().unwrap_or_default();
+    Ok((handle, fp))
 }
 
 /// 发给一个 PTY 会话任务的指令。
@@ -127,9 +161,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn connects_with_password() {
-        let h = connect_password("127.0.0.1", 2222, "tester", "testpass")
+        let (h, fp) = connect_password("127.0.0.1", 2222, "tester", "testpass", None)
             .await
             .expect("应当通过密码认证");
+        assert!(fp.starts_with("SHA256:"), "应拿到服务器指纹, got: {fp}");
         drop(h);
     }
 
@@ -137,8 +172,23 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn rejects_wrong_password() {
-        let r = connect_password("127.0.0.1", 2222, "tester", "wrong-password").await;
+        let r = connect_password("127.0.0.1", 2222, "tester", "wrong-password", None).await;
         assert!(r.is_err(), "错误密码必须认证失败");
+    }
+
+    // 集成测试：已知指纹不匹配时必须拒绝连接（TOFU 防中间人）。
+    #[tokio::test]
+    #[ignore]
+    async fn rejects_changed_fingerprint() {
+        let r = connect_password(
+            "127.0.0.1",
+            2222,
+            "tester",
+            "testpass",
+            Some("SHA256:bogusfingerprint".to_string()),
+        )
+        .await;
+        assert!(r.is_err(), "指纹不匹配必须拒绝连接");
     }
 
     // 集成测试：开 PTY、写 echo 命令、确认在输出中收到回显结果。
@@ -146,7 +196,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn pty_echoes_command_output() {
-        let h = connect_password("127.0.0.1", 2222, "tester", "testpass")
+        let (h, _fp) = connect_password("127.0.0.1", 2222, "tester", "testpass", None)
             .await
             .unwrap();
         let session = PtySession::open(&h, 80, 24).await.unwrap();
