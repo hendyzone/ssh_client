@@ -1,10 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { session } from "../ipc";
 
-/** xterm 终端视图，接入后端 SSH 会话的双向数据流 */
+/** xterm 终端视图，接入后端 SSH 会话的双向数据流；断开后可一键重连。 */
 export function TerminalView({
   sessionId,
   hostId,
@@ -13,9 +13,13 @@ export function TerminalView({
   hostId: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // attempt 每 +1 触发 effect 重跑以重连
+  const [attempt, setAttempt] = useState(0);
+  const [closed, setClosed] = useState(false);
 
   useEffect(() => {
     if (!ref.current) return;
+    setClosed(false);
     const term = new Terminal({ fontSize: 14, convertEol: false });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -23,27 +27,28 @@ export function TerminalView({
     fit.fit();
 
     const encoder = new TextEncoder();
-    // 先订阅事件，再建立连接，避免漏掉首批输出
     const unlisteners: Promise<() => void>[] = [];
 
     (async () => {
       unlisteners.push(session.onData(sessionId, (bytes) => term.write(bytes)));
       unlisteners.push(
-        session.onClosed(sessionId, () => term.write("\r\n[已断开]\r\n")),
+        session.onClosed(sessionId, () => {
+          term.write("\r\n[已断开]\r\n");
+          setClosed(true);
+        }),
       );
       try {
         await session.connect({ sessionId, hostId, cols: term.cols, rows: term.rows });
       } catch (e) {
         term.write(`\r\n[连接失败] ${e}\r\n`);
+        setClosed(true);
       }
     })();
 
-    // 用户输入转发到后端
     const onData = term.onData((d) => {
       session.write(sessionId, Array.from(encoder.encode(d)));
     });
 
-    // 容器尺寸变化（窗口缩放、标签切换可见、分屏）时同步 PTY 尺寸
     const onResize = () => {
       fit.fit();
       session.resize(sessionId, term.cols, term.rows);
@@ -51,7 +56,6 @@ export function TerminalView({
     const ro = new ResizeObserver(() => onResize());
     ro.observe(ref.current);
 
-    // 清理：移除监听、注销 xterm 事件、关闭会话
     return () => {
       ro.disconnect();
       onData.dispose();
@@ -59,7 +63,18 @@ export function TerminalView({
       session.close(sessionId);
       term.dispose();
     };
-  }, [sessionId, hostId]);
+  }, [sessionId, hostId, attempt]);
 
-  return <div ref={ref} style={{ width: "100%", height: "100%" }} />;
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      <div ref={ref} style={{ width: "100%", height: "100%" }} />
+      {closed && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)" }}>
+          <button onClick={() => setAttempt((n) => n + 1)} style={{ padding: "8px 16px" }}>
+            重新连接
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
