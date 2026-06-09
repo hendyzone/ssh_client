@@ -7,10 +7,10 @@ import { session } from "../ipc";
 /** xterm 终端视图，接入后端 SSH 会话的双向数据流 */
 export function TerminalView({
   sessionId,
-  conn,
+  hostId,
 }: {
   sessionId: string;
-  conn: { address: string; port: number; username: string; password: string };
+  hostId: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -31,15 +31,11 @@ export function TerminalView({
       unlisteners.push(
         session.onClosed(sessionId, () => term.write("\r\n[已断开]\r\n")),
       );
-      await session.connect({
-        sessionId,
-        address: conn.address,
-        port: conn.port,
-        username: conn.username,
-        password: conn.password,
-        cols: term.cols,
-        rows: term.rows,
-      });
+      try {
+        await session.connect({ sessionId, hostId, cols: term.cols, rows: term.rows });
+      } catch (e) {
+        term.write(`\r\n[连接失败] ${e}\r\n`);
+      }
     })();
 
     // 用户输入转发到后端
@@ -62,7 +58,7 @@ export function TerminalView({
       session.close(sessionId);
       term.dispose();
     };
-  }, [sessionId, conn]);
+  }, [sessionId, hostId]);
 
   return <div ref={ref} style={{ width: "100%", height: "100%" }} />;
 }
