@@ -153,4 +153,20 @@ mod tests {
         delete_host(&c, "h1").unwrap();
         assert!(get_host(&c, "h1").unwrap().is_none());
     }
+
+    #[test]
+    fn deleting_group_nulls_member_host_group_id() {
+        let c = mem();
+        let g = create_group(&c, "组A", None).unwrap();
+        let mut h = sample_host("h-cascade");
+        h.group_id = Some(g.id.clone());
+        upsert_host(&c, &h).unwrap();
+        // 删除分组
+        delete_group(&c, &g.id).unwrap();
+        // 主机仍在，但 group_id 被置空
+        let got = get_host(&c, "h-cascade").unwrap().unwrap();
+        assert_eq!(got.group_id, None);
+        // 分组已删
+        assert!(list_groups(&c).unwrap().is_empty());
+    }
 }
