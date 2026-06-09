@@ -28,6 +28,64 @@ pub fn delete_group(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+fn row_to_host(r: &rusqlite::Row) -> rusqlite::Result<Host> {
+    let tags_json: String = r.get(6)?;
+    Ok(Host {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        address: r.get(2)?,
+        port: r.get(3)?,
+        username: r.get(4)?,
+        group_id: r.get(5)?,
+        tags: serde_json::from_str(&tags_json).unwrap_or_default(),
+        auth_type: r.get(7)?,
+        credential_ref: r.get(8)?,
+        proxy_jump: r.get(9)?,
+    })
+}
+
+pub fn upsert_host(conn: &Connection, host: &Host) -> rusqlite::Result<()> {
+    let tags_json = serde_json::to_string(&host.tags).unwrap();
+    conn.execute(
+        "INSERT INTO hosts (id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
+         ON CONFLICT(id) DO UPDATE SET
+           name=?2, address=?3, port=?4, username=?5, group_id=?6,
+           tags=?7, auth_type=?8, credential_ref=?9, proxy_jump=?10",
+        rusqlite::params![
+            host.id, host.name, host.address, host.port, host.username,
+            host.group_id, tags_json, host.auth_type, host.credential_ref, host.proxy_jump
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn list_hosts(conn: &Connection) -> rusqlite::Result<Vec<Host>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump
+         FROM hosts ORDER BY name",
+    )?;
+    let rows = stmt.query_map([], row_to_host)?;
+    rows.collect()
+}
+
+pub fn get_host(conn: &Connection, id: &str) -> rusqlite::Result<Option<Host>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump
+         FROM hosts WHERE id = ?1",
+    )?;
+    let mut rows = stmt.query_map(rusqlite::params![id], row_to_host)?;
+    match rows.next() {
+        Some(h) => Ok(Some(h?)),
+        None => Ok(None),
+    }
+}
+
+pub fn delete_host(conn: &Connection, id: &str) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM hosts WHERE id = ?1", rusqlite::params![id])?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -57,5 +115,42 @@ mod tests {
         assert_eq!(list_groups(&c).unwrap()[0].name, "新名");
         delete_group(&c, &g.id).unwrap();
         assert!(list_groups(&c).unwrap().is_empty());
+    }
+
+    fn sample_host(id: &str) -> Host {
+        Host {
+            id: id.to_string(),
+            name: "web1".into(),
+            address: "10.0.0.1".into(),
+            port: 22,
+            username: "root".into(),
+            group_id: None,
+            tags: vec!["prod".into(), "web".into()],
+            auth_type: "password".into(),
+            credential_ref: None,
+            proxy_jump: None,
+        }
+    }
+
+    #[test]
+    fn upsert_get_and_list_host() {
+        let c = mem();
+        let mut h = sample_host("h1");
+        upsert_host(&c, &h).unwrap();
+        assert_eq!(list_hosts(&c).unwrap().len(), 1);
+        // 更新同 id
+        h.name = "web1-renamed".into();
+        upsert_host(&c, &h).unwrap();
+        let got = get_host(&c, "h1").unwrap().unwrap();
+        assert_eq!(got.name, "web1-renamed");
+        assert_eq!(got.tags, vec!["prod".to_string(), "web".to_string()]);
+    }
+
+    #[test]
+    fn delete_host_removes_it() {
+        let c = mem();
+        upsert_host(&c, &sample_host("h1")).unwrap();
+        delete_host(&c, "h1").unwrap();
+        assert!(get_host(&c, "h1").unwrap().is_none());
     }
 }
