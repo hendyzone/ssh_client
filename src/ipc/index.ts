@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export interface Group {
   id: string;
@@ -28,4 +29,20 @@ export const api = {
   listHosts: () => invoke<Host[]>("list_hosts_cmd"),
   upsertHost: (host: Host) => invoke<void>("upsert_host_cmd", { host }),
   deleteHost: (id: string) => invoke<void>("delete_host_cmd", { id }),
+};
+
+/** 会话层 IPC：SSH 连接、读写、调整大小、关闭及事件订阅 */
+export const session = {
+  connect: (p: {
+    sessionId: string; address: string; port: number; username: string;
+    password: string; cols: number; rows: number;
+  }) => invoke<void>("connect_cmd", p),
+  write: (sessionId: string, data: number[]) => invoke<void>("write_cmd", { sessionId, data }),
+  resize: (sessionId: string, cols: number, rows: number) =>
+    invoke<void>("resize_cmd", { sessionId, cols, rows }),
+  close: (sessionId: string) => invoke<void>("close_cmd", { sessionId }),
+  onData: (sessionId: string, cb: (bytes: Uint8Array) => void): Promise<UnlistenFn> =>
+    listen<number[]>(`ssh://${sessionId}/data`, (e) => cb(new Uint8Array(e.payload))),
+  onClosed: (sessionId: string, cb: () => void): Promise<UnlistenFn> =>
+    listen(`ssh://${sessionId}/closed`, () => cb()),
 };
