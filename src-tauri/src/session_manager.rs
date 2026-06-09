@@ -34,26 +34,26 @@ impl SessionManager {
     }
 }
 
-/// 建链、开 PTY，启动单任务读写循环，返回该会话的指令发送端。
+/// 建链（带 TOFU 指纹校验）、开 PTY，启动读写循环。
+/// 返回 (会话指令发送端, 服务器实际公钥指纹)。
 pub async fn spawn_session(
     addr: String,
     port: u16,
     username: String,
     password: String,
+    expected_fp: Option<String>,
     cols: u32,
     rows: u32,
     on_data: impl Fn(Vec<u8>) + Send + 'static,
     on_close: impl Fn() + Send + 'static,
-) -> Result<mpsc::UnboundedSender<Cmd>, String> {
-    let handle = connect_password(&addr, port, &username, &password)
-        .await
-        .map_err(|e| e.to_string())?;
+) -> Result<(mpsc::UnboundedSender<Cmd>, String), String> {
+    let (handle, fp) = connect_password(&addr, port, &username, &password, expected_fp).await?;
     let session = PtySession::open(&handle, cols, rows)
         .await
         .map_err(|e| e.to_string())?;
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<Cmd>();
     tokio::spawn(session.run(cmd_rx, on_data, on_close));
-    Ok(cmd_tx)
+    Ok((cmd_tx, fp))
 }
 
 #[cfg(test)]
@@ -69,11 +69,12 @@ mod tests {
         let mgr = SessionManager::default();
         let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
-        let tx = spawn_session(
+        let (tx, _fp) = spawn_session(
             "127.0.0.1".into(),
             2222,
             "tester".into(),
             "testpass".into(),
+            None,
             80,
             24,
             move |chunk| {
