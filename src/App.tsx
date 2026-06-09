@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalView } from "./components/TerminalView";
 import { TabBar } from "./components/TabBar";
 import { HostForm } from "./components/HostForm";
+import { CommandPalette } from "./components/CommandPalette";
 import { useConnections } from "./stores/connections";
 import { useSessions } from "./stores/sessions";
 import type { Host } from "./ipc";
@@ -12,6 +13,18 @@ function App() {
   const { tabs, activeId, open, close, setActive } = useSessions();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Host | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const handleConnect = (hostId: string) => {
     const title = hosts.find((h) => h.id === hostId)?.name ?? hostId;
@@ -57,6 +70,12 @@ function App() {
           </div>
         )}
       </main>
+      <CommandPalette
+        open={paletteOpen}
+        hosts={hosts}
+        onConnect={handleConnect}
+        onClose={() => setPaletteOpen(false)}
+      />
     </div>
   );
 }
