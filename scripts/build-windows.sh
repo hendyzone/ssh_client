@@ -23,5 +23,5 @@ npm run tauri build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bun
 
 echo ""
 echo "构建完成，产物："
-echo "  应用本体: src-tauri/target/x86_64-pc-windows-msvc/release/ssh-client-scaffold.exe"
-echo "  安装  包: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ssh-client-scaffold_0.1.0_x64-setup.exe"
+echo "  应用本体: src-tauri/target/x86_64-pc-windows-msvc/release/hendyzone-ssh.exe"
+echo "  安装  包: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Hendyzone SSH_0.1.0_x64-setup.exe"

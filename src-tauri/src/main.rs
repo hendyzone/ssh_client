@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    ssh_client_scaffold_lib::run()
+    hendyzone_ssh_lib::run()
 }
