@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { Sidebar } from "./components/Sidebar";
 
 function App() {
-  const [health, setHealth] = useState("…");
-  useEffect(() => {
-    invoke<string>("health").then(setHealth).catch((e) => setHealth(`err: ${e}`));
-  }, []);
-  return <div data-testid="health">{health}</div>;
+  const handleConnect = (hostId: string) => {
+    console.log("connect to", hostId); // 里程碑 3 接真实连接
+  };
+  return (
+    <div style={{ display: "flex", height: "100vh" }}>
+      <Sidebar onConnect={handleConnect} />
+      <main style={{ flex: 1 }} data-testid="terminal-area" />
+    </div>
+  );
 }
 
 export default App;
