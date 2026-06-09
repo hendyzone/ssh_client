@@ -2,6 +2,7 @@ mod commands;
 mod connection_store;
 mod db;
 mod models;
+mod ssh_session;
 
 use std::sync::Mutex;
 use rusqlite::Connection;
