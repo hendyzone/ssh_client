@@ -28,15 +28,15 @@ export const api = {
   deleteGroup: (id: string) => invoke<void>("delete_group_cmd", { id }),
   listHosts: () => invoke<Host[]>("list_hosts_cmd"),
   upsertHost: (host: Host) => invoke<void>("upsert_host_cmd", { host }),
+  saveHost: (host: Host, password: string | null) =>
+    invoke<void>("save_host_cmd", { host, password }),
   deleteHost: (id: string) => invoke<void>("delete_host_cmd", { id }),
 };
 
 /** 会话层 IPC：SSH 连接、读写、调整大小、关闭及事件订阅 */
 export const session = {
-  connect: (p: {
-    sessionId: string; address: string; port: number; username: string;
-    password: string; cols: number; rows: number;
-  }) => invoke<void>("connect_cmd", p),
+  connect: (p: { sessionId: string; hostId: string; cols: number; rows: number }) =>
+    invoke<void>("connect_cmd", p),
   write: (sessionId: string, data: number[]) => invoke<void>("write_cmd", { sessionId, data }),
   resize: (sessionId: string, cols: number, rows: number) =>
     invoke<void>("resize_cmd", { sessionId, cols, rows }),

@@ -6,8 +6,9 @@ interface ConnState {
   hosts: Host[];
   load: () => Promise<void>;
   addGroup: (name: string) => Promise<void>;
-  saveHost: (host: Host) => Promise<void>;
+  saveHost: (host: Host, password: string | null) => Promise<void>;
   removeHost: (id: string) => Promise<void>;
+  removeGroup: (id: string) => Promise<void>;
 }
 
 export const useConnections = create<ConnState>((set, get) => ({
@@ -21,12 +22,16 @@ export const useConnections = create<ConnState>((set, get) => ({
     await api.createGroup(name, null);
     await get().load();
   },
-  saveHost: async (host) => {
-    await api.upsertHost(host);
+  saveHost: async (host, password) => {
+    await api.saveHost(host, password);
     await get().load();
   },
   removeHost: async (id) => {
     await api.deleteHost(id);
+    await get().load();
+  },
+  removeGroup: async (id) => {
+    await api.deleteGroup(id);
     await get().load();
   },
 }));
