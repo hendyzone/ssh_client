@@ -43,16 +43,17 @@ export function TerminalView({
       session.write(sessionId, Array.from(encoder.encode(d)));
     });
 
-    // 窗口大小变化时同步更新 PTY 尺寸
+    // 容器尺寸变化（窗口缩放、标签切换可见、分屏）时同步 PTY 尺寸
     const onResize = () => {
       fit.fit();
       session.resize(sessionId, term.cols, term.rows);
     };
-    window.addEventListener("resize", onResize);
+    const ro = new ResizeObserver(() => onResize());
+    ro.observe(ref.current);
 
     // 清理：移除监听、注销 xterm 事件、关闭会话
     return () => {
-      window.removeEventListener("resize", onResize);
+      ro.disconnect();
       onData.dispose();
       unlisteners.forEach((p) => p.then((u) => u()));
       session.close(sessionId);
