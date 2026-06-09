@@ -8,6 +8,7 @@ pub fn health() -> String {
     app_health()
 }
 
+use crate::credential_vault;
 use crate::models::{Group, Host};
 use crate::session_manager::{spawn_session, SessionManager};
 use crate::ssh_session::Cmd;
@@ -59,27 +60,66 @@ pub fn upsert_host_cmd(db: State<Db>, host: Host) -> Result<(), String> {
     cs::upsert_host(&c, &host).map_err(map_err)
 }
 
+/// 保存主机：写库 + （若提供明文密码）存入钥匙串并把 credential_ref 设为 host.id。
+/// 前端在新增/编辑主机时调用；密码只在这里短暂经过后端，存入钥匙串后不再返回前端。
 #[tauri::command]
-pub fn delete_host_cmd(db: State<Db>, id: String) -> Result<(), String> {
+pub fn save_host_cmd(db: State<Db>, mut host: Host, password: Option<String>) -> Result<(), String> {
+    if let Some(pw) = password {
+        if !pw.is_empty() {
+            credential_vault::store(&host.id, &pw)?;
+            host.credential_ref = Some(host.id.clone());
+            host.auth_type = "password".to_string();
+        }
+    }
     let c = db.0.lock().map_err(map_err)?;
-    cs::delete_host(&c, &id).map_err(map_err)
+    cs::upsert_host(&c, &host).map_err(map_err)
 }
 
-/// 建立 SSH 会话：建链 + 开 PTY，并把远端输出 / 关闭事件发回前端。
+#[tauri::command]
+pub fn delete_host_cmd(db: State<Db>, id: String) -> Result<(), String> {
+    // 先取出 host 看是否有 credential_ref，删库后清钥匙串。
+    let credential_ref = {
+        let c = db.0.lock().map_err(map_err)?;
+        let host = cs::get_host(&c, &id).map_err(map_err)?;
+        cs::delete_host(&c, &id).map_err(map_err)?;
+        host.and_then(|h| h.credential_ref)
+    };
+    if let Some(r) = credential_ref {
+        credential_vault::delete(&r)?;
+    }
+    Ok(())
+}
+
+/// 建立 SSH 会话：按 host_id 读库 + 从钥匙串取密码，再建链开 PTY。
 ///
-/// 异步命令的 `State` 必须带生命周期参数 `State<'_, T>`。
+/// 重要并发约束：rusqlite 的 Connection / MutexGuard 不是 Send，不能跨 await 持有。
+/// 因此在 await 之前同步取出 host 信息和密码并释放锁，再 await spawn_session。
 #[tauri::command]
 pub async fn connect_cmd(
     app: AppHandle,
+    db: State<'_, Db>,
     sessions: State<'_, SessionManager>,
     session_id: String,
-    address: String,
-    port: u16,
-    username: String,
-    password: String,
+    host_id: String,
     cols: u32,
     rows: u32,
 ) -> Result<(), String> {
+    // —— 同步段：取 host + 密码，随即释放锁 ——
+    let (address, port, username, password) = {
+        let c = db.0.lock().map_err(map_err)?;
+        let host = cs::get_host(&c, &host_id)
+            .map_err(map_err)?
+            .ok_or_else(|| "主机不存在".to_string())?;
+        drop(c); // 显式释放，确保不跨 await
+        let password = match host.credential_ref.as_deref() {
+            Some(r) => credential_vault::get(r)?
+                .ok_or_else(|| "未找到该主机的已保存凭据，请先在主机编辑里填写密码".to_string())?,
+            None => return Err("该主机未配置密码凭据，请先编辑主机填写密码".to_string()),
+        };
+        (host.address, host.port, host.username, password)
+    };
+
+    // —— 异步段：建链 ——
     let app_data = app.clone();
     let sid_data = session_id.clone();
     let app_close = app.clone();
