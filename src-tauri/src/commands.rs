@@ -104,32 +104,37 @@ pub async fn connect_cmd(
     cols: u32,
     rows: u32,
 ) -> Result<(), String> {
-    // —— 同步段：取 host + 密码，随即释放锁 ——
-    let (address, port, username, password) = {
+    // —— 同步段：取 host + 密码 + 已知指纹，随即释放锁 ——
+    let (address, port, username, password, host_key, expected_fp) = {
         let c = db.0.lock().map_err(map_err)?;
         let host = cs::get_host(&c, &host_id)
             .map_err(map_err)?
             .ok_or_else(|| "主机不存在".to_string())?;
-        drop(c); // 显式释放，确保不跨 await
         let password = match host.credential_ref.as_deref() {
             Some(r) => credential_vault::get(r)?
                 .ok_or_else(|| "未找到该主机的已保存凭据，请先在主机编辑里填写密码".to_string())?,
             None => return Err("该主机未配置密码凭据，请先编辑主机填写密码".to_string()),
         };
-        (host.address, host.port, host.username, password)
+        let host_key = format!("{}:{}", host.address, host.port);
+        let expected_fp = cs::get_known_fingerprint(&c, &host_key).map_err(map_err)?;
+        drop(c);
+        (host.address, host.port, host.username, password, host_key, expected_fp)
     };
 
-    // —— 异步段：建链 ——
+    let is_first = expected_fp.is_none();
+
+    // —— 异步段：建链（含指纹校验）——
     let app_data = app.clone();
     let sid_data = session_id.clone();
     let app_close = app.clone();
     let sid_close = session_id.clone();
 
-    let tx = spawn_session(
+    let (tx, actual_fp) = spawn_session(
         address,
         port,
         username,
         password,
+        expected_fp,
         cols,
         rows,
         move |chunk| {
@@ -140,6 +145,12 @@ pub async fn connect_cmd(
         },
     )
     .await?;
+
+    // —— 首次连接：记录指纹（TOFU）——
+    if is_first {
+        let c = db.0.lock().map_err(map_err)?;
+        cs::set_known_fingerprint(&c, &host_key, &actual_fp).map_err(map_err)?;
+    }
 
     sessions.register(session_id, tx);
     Ok(())
