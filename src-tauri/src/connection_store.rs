@@ -86,6 +86,26 @@ pub fn delete_host(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// 读取某主机（"address:port"）已记录的公钥指纹。
+pub fn get_known_fingerprint(conn: &Connection, host: &str) -> rusqlite::Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT fingerprint FROM known_hosts WHERE host = ?1")?;
+    let mut rows = stmt.query_map(rusqlite::params![host], |r| r.get::<_, String>(0))?;
+    match rows.next() {
+        Some(fp) => Ok(Some(fp?)),
+        None => Ok(None),
+    }
+}
+
+/// 记录/更新某主机的公钥指纹（TOFU 首次写入；变更确认后由上层决定是否覆盖）。
+pub fn set_known_fingerprint(conn: &Connection, host: &str, fingerprint: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO known_hosts (host, fingerprint) VALUES (?1, ?2)
+         ON CONFLICT(host) DO UPDATE SET fingerprint = ?2",
+        rusqlite::params![host, fingerprint],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +172,16 @@ mod tests {
         upsert_host(&c, &sample_host("h1")).unwrap();
         delete_host(&c, "h1").unwrap();
         assert!(get_host(&c, "h1").unwrap().is_none());
+    }
+
+    #[test]
+    fn known_fingerprint_roundtrip() {
+        let c = mem();
+        assert_eq!(get_known_fingerprint(&c, "1.2.3.4:22").unwrap(), None);
+        set_known_fingerprint(&c, "1.2.3.4:22", "SHA256:abc").unwrap();
+        assert_eq!(get_known_fingerprint(&c, "1.2.3.4:22").unwrap(), Some("SHA256:abc".to_string()));
+        set_known_fingerprint(&c, "1.2.3.4:22", "SHA256:def").unwrap();
+        assert_eq!(get_known_fingerprint(&c, "1.2.3.4:22").unwrap(), Some("SHA256:def".to_string()));
     }
 
     #[test]

@@ -23,6 +23,10 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             credential_ref TEXT,
             proxy_jump TEXT
         );
+        CREATE TABLE IF NOT EXISTS known_hosts (
+            host TEXT PRIMARY KEY,
+            fingerprint TEXT NOT NULL
+        );
         ",
     )
 }
