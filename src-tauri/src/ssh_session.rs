@@ -5,7 +5,9 @@
 
 use russh::client;
 use russh::keys::ssh_key;
+use russh::ChannelMsg;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 /// 客户端回调处理器。
 ///
@@ -49,6 +51,72 @@ pub async fn connect_password(
     Ok(handle)
 }
 
+/// 发给一个 PTY 会话任务的指令。
+///
+/// Task 11 的 SessionManager 会复用此枚举，通过 mpsc 向 run() 循环投递操作。
+pub enum Cmd {
+    /// 向 PTY 写入字节（如终端键盘输入）。
+    Write(Vec<u8>),
+    /// 调整窗口大小（列、行）。
+    Resize(u32, u32),
+    /// 主动关闭会话。
+    Close,
+}
+
+/// 一个活跃的 PTY 会话：持有 channel，由 run() 单任务循环驱动读写。
+///
+/// 因为 russh 的 `Channel` 既要被 `wait()` 读取又要 `data()` 写入，
+/// 无法 split，所以读写共用一个 channel，由 run() 用 `tokio::select!` 复用。
+pub struct PtySession {
+    channel: russh::Channel<client::Msg>,
+}
+
+impl PtySession {
+    /// 在已认证连接上请求一个 PTY 并启动 shell。
+    pub async fn open(
+        handle: &client::Handle<Client>,
+        cols: u32,
+        rows: u32,
+    ) -> Result<Self, russh::Error> {
+        let channel = handle.channel_open_session().await?;
+        // request_pty: want_reply=false, term, 列/行, 像素宽/高=0, terminal_modes=空。
+        channel
+            .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
+            .await?;
+        channel.request_shell(false).await?;
+        Ok(PtySession { channel })
+    }
+
+    /// 单任务循环：同时处理远端输出与前端指令，读写共用一个 channel。
+    ///
+    /// - 远端输出（Data/ExtendedData）→ on_data 回调；
+    /// - 前端指令（Write/Resize/Close）→ 操作 channel；
+    /// - Eof/Close/通道结束/指令通道关闭 → 退出循环并触发 on_close。
+    pub async fn run(
+        mut self,
+        mut cmd_rx: mpsc::UnboundedReceiver<Cmd>,
+        on_data: impl Fn(Vec<u8>) + Send + 'static,
+        on_close: impl Fn() + Send + 'static,
+    ) {
+        loop {
+            tokio::select! {
+                msg = self.channel.wait() => match msg {
+                    Some(ChannelMsg::Data { data }) => on_data(data.to_vec()),
+                    Some(ChannelMsg::ExtendedData { data, .. }) => on_data(data.to_vec()),
+                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
+                    _ => {}
+                },
+                cmd = cmd_rx.recv() => match cmd {
+                    Some(Cmd::Write(d)) => { let _ = self.channel.data(&d[..]).await; }
+                    Some(Cmd::Resize(c, r)) => { let _ = self.channel.window_change(c, r, 0, 0).await; }
+                    Some(Cmd::Close) | None => break,
+                }
+            }
+        }
+        on_close();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,5 +139,54 @@ mod tests {
     async fn rejects_wrong_password() {
         let r = connect_password("127.0.0.1", 2222, "tester", "wrong-password").await;
         assert!(r.is_err(), "错误密码必须认证失败");
+    }
+
+    // 集成测试：开 PTY、写 echo 命令、确认在输出中收到回显结果。
+    //   cargo test ssh_session::tests::pty_echoes_command_output -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn pty_echoes_command_output() {
+        let h = connect_password("127.0.0.1", 2222, "tester", "testpass")
+            .await
+            .unwrap();
+        let session = PtySession::open(&h, 80, 24).await.unwrap();
+
+        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        tokio::spawn(session.run(
+            cmd_rx,
+            move |chunk| {
+                let _ = out_tx.send(chunk);
+            },
+            || {},
+        ));
+
+        cmd_tx
+            .send(Cmd::Write(b"echo hello_itest\n".to_vec()))
+            .unwrap();
+
+        let mut got = String::new();
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline {
+            match tokio::time::timeout(
+                tokio::time::Duration::from_millis(500),
+                out_rx.recv(),
+            )
+            .await
+            {
+                Ok(Some(chunk)) => {
+                    got.push_str(&String::from_utf8_lossy(&chunk));
+                    if got.contains("hello_itest") {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let _ = cmd_tx.send(Cmd::Close);
+        assert!(
+            got.contains("hello_itest"),
+            "应在 PTY 输出中看到 echo 结果, got: {got}"
+        );
     }
 }
