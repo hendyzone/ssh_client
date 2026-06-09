@@ -19,7 +19,12 @@ export function TerminalView({
 
   useEffect(() => {
     if (!ref.current) return;
+    // 每次（重）连接用唯一的后端会话 id，避免重连时旧 close 与新 connect 竞态，
+    // 以及旧事件监听串入新终端。
+    const connId = `${sessionId}#${attempt}`;
+    let disposed = false;
     setClosed(false);
+
     const term = new Terminal({ fontSize: 14, convertEol: false });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -30,37 +35,41 @@ export function TerminalView({
     const unlisteners: Promise<() => void>[] = [];
 
     (async () => {
-      unlisteners.push(session.onData(sessionId, (bytes) => term.write(bytes)));
+      unlisteners.push(session.onData(connId, (bytes) => { if (!disposed) term.write(bytes); }));
       unlisteners.push(
-        session.onClosed(sessionId, () => {
+        session.onClosed(connId, () => {
+          if (disposed) return;
           term.write("\r\n[已断开]\r\n");
           setClosed(true);
         }),
       );
       try {
-        await session.connect({ sessionId, hostId, cols: term.cols, rows: term.rows });
+        await session.connect({ sessionId: connId, hostId, cols: term.cols, rows: term.rows });
       } catch (e) {
-        term.write(`\r\n[连接失败] ${e}\r\n`);
-        setClosed(true);
+        if (!disposed) {
+          term.write(`\r\n[连接失败] ${e}\r\n`);
+          setClosed(true);
+        }
       }
     })();
 
     const onData = term.onData((d) => {
-      session.write(sessionId, Array.from(encoder.encode(d)));
+      session.write(connId, Array.from(encoder.encode(d)));
     });
 
     const onResize = () => {
       fit.fit();
-      session.resize(sessionId, term.cols, term.rows);
+      session.resize(connId, term.cols, term.rows);
     };
     const ro = new ResizeObserver(() => onResize());
     ro.observe(ref.current);
 
     return () => {
+      disposed = true;
       ro.disconnect();
       onData.dispose();
       unlisteners.forEach((p) => p.then((u) => u()));
-      session.close(sessionId);
+      session.close(connId);
       term.dispose();
     };
   }, [sessionId, hostId, attempt]);
