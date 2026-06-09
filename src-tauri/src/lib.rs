@@ -34,6 +34,7 @@ pub fn run() {
             commands::delete_group_cmd,
             commands::list_hosts_cmd,
             commands::upsert_host_cmd,
+            commands::save_host_cmd,
             commands::delete_host_cmd,
             commands::connect_cmd,
             commands::write_cmd,
