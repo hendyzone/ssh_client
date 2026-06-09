@@ -4311,7 +4311,6 @@ dependencies = [
 name = "ssh-client-scaffold"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "rusqlite",
  "russh",
  "serde",

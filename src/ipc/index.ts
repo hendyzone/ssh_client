@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 export interface Group {
   id: string;
   name: string;
-  parent_id: string | null;
+  parentId: string | null;
 }
 
 export interface Host {

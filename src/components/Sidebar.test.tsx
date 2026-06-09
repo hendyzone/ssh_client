@@ -8,7 +8,7 @@ vi.mock("../stores/connections");
 describe("Sidebar", () => {
   beforeEach(() => {
     (useConnections as unknown as any).mockReturnValue({
-      groups: [{ id: "g1", name: "生产组", parent_id: null }],
+      groups: [{ id: "g1", name: "生产组", parentId: null }],
       hosts: [
         { id: "h1", name: "web1", address: "10.0.0.1", port: 22, username: "root",
           groupId: "g1", tags: [], authType: "password", credentialRef: null, proxyJump: null },
