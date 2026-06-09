@@ -2,6 +2,7 @@ mod commands;
 mod connection_store;
 mod db;
 mod models;
+mod session_manager;
 mod ssh_session;
 
 use std::sync::Mutex;
@@ -21,6 +22,7 @@ pub fn run() {
             let conn = Connection::open(dir.join("ssh-client.db")).expect("打开数据库失败");
             db::init_schema(&conn).expect("初始化数据库 schema 失败");
             app.manage(Db(Mutex::new(conn)));
+            app.manage(session_manager::SessionManager::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -32,6 +34,10 @@ pub fn run() {
             commands::list_hosts_cmd,
             commands::upsert_host_cmd,
             commands::delete_host_cmd,
+            commands::connect_cmd,
+            commands::write_cmd,
+            commands::resize_cmd,
+            commands::close_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("运行 Tauri 应用时出错");
