@@ -1,5 +1,6 @@
 mod commands;
 mod connection_store;
+mod credential_vault;
 mod db;
 mod models;
 mod session_manager;
