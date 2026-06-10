@@ -1,26 +1,30 @@
-import type { Tab } from "../stores/sessions";
-
-// 标签栏组件：展示所有标签，支持切换和关闭
+// 通用标签栏：用于一级（服务器）与二级（连接实例）两层。
 export function TabBar({
   tabs,
   activeId,
   onSelect,
   onClose,
+  onNew,
+  variant,
 }: {
-  tabs: Tab[];
+  tabs: { id: string; title: string }[];
   activeId: string | null;
-  onSelect: (sessionId: string) => void;
-  onClose: (sessionId: string) => void;
+  onSelect: (id: string) => void;
+  onClose: (id: string) => void;
+  /** 提供则在标签栏末尾显示"+"新建按钮。 */
+  onNew?: () => void;
+  /** 二级标签用 "sub" 改变样式。 */
+  variant?: "sub";
 }) {
   // 无标签时不渲染
   if (tabs.length === 0) return null;
   return (
-    <div className="tabbar">
+    <div className={variant === "sub" ? "tabbar tabbar--sub" : "tabbar"}>
       {tabs.map((t) => (
         <div
-          key={t.sessionId}
-          onClick={() => onSelect(t.sessionId)}
-          className={t.sessionId === activeId ? "tab active" : "tab"}
+          key={t.id}
+          onClick={() => onSelect(t.id)}
+          className={t.id === activeId ? "tab active" : "tab"}
         >
           <span className="tab__title">{t.title}</span>
           {/* 关闭按钮：stopPropagation 阻止冒泡，避免同时触发 onSelect */}
@@ -29,13 +33,18 @@ export function TabBar({
             aria-label={`关闭 ${t.title}`}
             onClick={(e) => {
               e.stopPropagation();
-              onClose(t.sessionId);
+              onClose(t.id);
             }}
           >
             ×
           </button>
         </div>
       ))}
+      {onNew && (
+        <button className="tab__new" aria-label="新建连接实例" title="新建连接实例" onClick={onNew}>
+          +
+        </button>
+      )}
     </div>
   );
 }

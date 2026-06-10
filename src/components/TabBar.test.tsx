@@ -3,8 +3,8 @@ import { describe, it, expect, vi } from "vitest";
 import { TabBar } from "./TabBar";
 
 const tabs = [
-  { sessionId: "s1", hostId: "h1", title: "web1" },
-  { sessionId: "s2", hostId: "h2", title: "db1" },
+  { id: "s1", title: "web1" },
+  { id: "s2", title: "db1" },
 ];
 
 describe("TabBar", () => {
@@ -28,5 +28,12 @@ describe("TabBar", () => {
     fireEvent.click(screen.getByLabelText("关闭 db1"));
     expect(onClose).toHaveBeenCalledWith("s2");
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("提供 onNew 时显示新建按钮并可点击", () => {
+    const onNew = vi.fn();
+    render(<TabBar tabs={tabs} activeId="s1" onSelect={vi.fn()} onClose={vi.fn()} onNew={onNew} />);
+    fireEvent.click(screen.getByLabelText("新建连接实例"));
+    expect(onNew).toHaveBeenCalled();
   });
 });

@@ -10,7 +10,15 @@ import type { Host } from "./ipc";
 
 function App() {
   const { hosts, groups, saveHost } = useConnections();
-  const { tabs, activeId, open, close, setActive } = useSessions();
+  const {
+    servers,
+    activeHostId,
+    open,
+    closeInstance,
+    closeServer,
+    setActiveServer,
+    setActiveInstance,
+  } = useSessions();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Host | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -41,13 +49,32 @@ function App() {
     setFormOpen(false);
   };
 
+  const activeServer = servers.find((sv) => sv.hostId === activeHostId) ?? null;
+
   return (
     <div className="app">
       <Sidebar onConnect={handleConnect} onNewHost={openNew} onEditHost={openEdit} />
       <main className="main" data-testid="terminal-area">
-        <TabBar tabs={tabs} activeId={activeId} onSelect={setActive} onClose={close} />
+        {/* 一级标签：服务器 */}
+        <TabBar
+          tabs={servers.map((sv) => ({ id: sv.hostId, title: sv.title }))}
+          activeId={activeHostId}
+          onSelect={setActiveServer}
+          onClose={closeServer}
+        />
+        {/* 二级标签：当前服务器的连接实例 */}
+        {activeServer && (
+          <TabBar
+            variant="sub"
+            tabs={activeServer.instances.map((i) => ({ id: i.sessionId, title: i.title }))}
+            activeId={activeServer.activeInstanceId}
+            onSelect={(sid) => setActiveInstance(activeServer.hostId, sid)}
+            onClose={(sid) => closeInstance(activeServer.hostId, sid)}
+            onNew={() => open(activeServer.hostId, activeServer.title)}
+          />
+        )}
         <div className="terminal-stack">
-          {tabs.length === 0 && (
+          {servers.length === 0 && (
             <div className="empty-state">
               <svg className="empty-state__icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2.5" y="4" width="19" height="16" rx="2.5" />
@@ -60,19 +87,20 @@ function App() {
               </div>
             </div>
           )}
-          {/* 所有会话保持挂载，非激活用 display:none 隐藏，避免切换时断开会话 */}
-          {tabs.map((t) => (
-            <div
-              key={t.sessionId}
-              style={{
-                position: "absolute",
-                inset: 0,
-                display: t.sessionId === activeId ? "block" : "none",
-              }}
-            >
-              <TerminalView sessionId={t.sessionId} hostId={t.hostId} />
-            </div>
-          ))}
+          {/* 所有实例保持挂载，仅显示当前服务器的当前实例，避免切换时断开会话 */}
+          {servers.flatMap((sv) =>
+            sv.instances.map((i) => {
+              const visible = sv.hostId === activeHostId && i.sessionId === sv.activeInstanceId;
+              return (
+                <div
+                  key={i.sessionId}
+                  style={{ position: "absolute", inset: 0, display: visible ? "block" : "none" }}
+                >
+                  <TerminalView sessionId={i.sessionId} hostId={sv.hostId} />
+                </div>
+              );
+            }),
+          )}
         </div>
         {formOpen && (
           <div className="overlay overlay--center">

@@ -420,6 +420,42 @@ kbd {
   color: var(--text);
 }
 
+/* 二级标签栏（连接实例）：更矮、底色更深、字号更小 */
+.tabbar--sub {
+  height: 32px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.tabbar--sub .tab {
+  padding: 0 8px 0 12px;
+  max-width: 150px;
+}
+.tabbar--sub .tab__title {
+  font-size: 12px;
+}
+.tabbar--sub .tab.active {
+  background: var(--surface-2);
+}
+.tabbar--sub .tab.active::after {
+  height: 2px;
+  background: var(--accent);
+}
+
+/* 标签栏末尾的"+"新建实例按钮 */
+.tab__new {
+  flex-shrink: 0;
+  width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  color: var(--text-faint);
+}
+.tab__new:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
 /* ---------- 终端区 ---------- */
 
 .terminal-stack {
