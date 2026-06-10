@@ -140,6 +140,7 @@ export function Sidebar({
           <path d="M12 15h5" />
         </svg>
         <span className="sidebar__title">Hendyzone SSH</span>
+        <span className="sidebar__version">v{__APP_VERSION__}</span>
       </div>
 
       {/* 搜索框 */}

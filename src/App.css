@@ -219,6 +219,12 @@ kbd {
   font-weight: 700;
   letter-spacing: 0.2px;
 }
+.sidebar__version {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-left: auto;
+}
 
 .sidebar__search {
   padding: 0 16px 12px;
