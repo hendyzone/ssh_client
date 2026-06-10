@@ -21,14 +21,36 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             tags TEXT NOT NULL,            -- JSON 数组字符串
             auth_type TEXT NOT NULL,
             credential_ref TEXT,
-            proxy_jump TEXT
+            proxy_jump TEXT,
+            key_path TEXT
         );
         CREATE TABLE IF NOT EXISTS known_hosts (
             host TEXT PRIMARY KEY,
             fingerprint TEXT NOT NULL
         );
         ",
-    )
+    )?;
+    // 迁移：为早期版本建立的库补 key_path 列（已存在则忽略错误，保持幂等）。
+    add_column_if_missing(conn, "hosts", "key_path", "TEXT")?;
+    Ok(())
+}
+
+/// 若指定表缺少某列则 ALTER 添加；列已存在时静默跳过（用于幂等迁移）。
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    decl: &str,
+) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let exists = stmt
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|c| c.ok())
+        .any(|c| c == column);
+    if !exists {
+        conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {decl};"))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

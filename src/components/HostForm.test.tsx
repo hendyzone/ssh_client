@@ -26,13 +26,33 @@ describe("HostForm", () => {
     const initial = {
       id: "h1", name: "old", address: "1.1.1.1", port: 2222, username: "u",
       groupId: null, tags: [], authType: "password", credentialRef: "h1", proxyJump: null,
+      keyPath: null,
     };
     render(<HostForm groups={[]} initial={initial} onSubmit={onSubmit} onCancel={vi.fn()} />);
     expect((screen.getByLabelText("名称") as HTMLInputElement).value).toBe("old");
     expect((screen.getByLabelText("端口") as HTMLInputElement).value).toBe("2222");
     fireEvent.click(screen.getByText("保存"));
-    const [host, password] = onSubmit.mock.calls[0];
+    const [host, secret] = onSubmit.mock.calls[0];
     expect(host.id).toBe("h1"); // 保持原 id
-    expect(password).toBeNull(); // 密码留空 → null
+    expect(secret).toBeNull(); // 密码留空 → null
+  });
+
+  it("密钥认证：切换后填私钥路径与口令，host 带 keyPath、secret 为口令", () => {
+    const onSubmit = vi.fn();
+    render(<HostForm groups={[]} initial={null} onSubmit={onSubmit} onCancel={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "k1" } });
+    fireEvent.change(screen.getByLabelText("地址"), { target: { value: "10.0.0.9" } });
+    fireEvent.change(screen.getByLabelText("用户名"), { target: { value: "root" } });
+    // 切到密钥认证
+    fireEvent.change(screen.getByLabelText("认证方式"), { target: { value: "key" } });
+    // 密码框消失、出现私钥字段
+    expect(screen.queryByLabelText("密码")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("私钥路径"), { target: { value: "~/.ssh/id_ed25519" } });
+    fireEvent.change(screen.getByLabelText("私钥口令"), { target: { value: "pp" } });
+    fireEvent.click(screen.getByText("保存"));
+    const [host, secret] = onSubmit.mock.calls[0];
+    expect(host.authType).toBe("key");
+    expect(host.keyPath).toBe("~/.ssh/id_ed25519");
+    expect(secret).toBe("pp");
   });
 });

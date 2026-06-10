@@ -11,7 +11,7 @@ pub fn health() -> String {
 use crate::credential_vault;
 use crate::models::{Group, Host};
 use crate::session_manager::{spawn_session, SessionManager};
-use crate::ssh_session::Cmd;
+use crate::ssh_session::{Auth, Cmd};
 use crate::{connection_store as cs, Db};
 use tauri::{AppHandle, Emitter, State};
 
@@ -60,15 +60,16 @@ pub fn upsert_host_cmd(db: State<Db>, host: Host) -> Result<(), String> {
     cs::upsert_host(&c, &host).map_err(map_err)
 }
 
-/// 保存主机：写库 + （若提供明文密码）存入钥匙串并把 credential_ref 设为 host.id。
-/// 前端在新增/编辑主机时调用；密码只在这里短暂经过后端，存入钥匙串后不再返回前端。
+/// 保存主机：写库 + （若提供机密）存入钥匙串并把 credential_ref 设为 host.id。
+///
+/// `secret` 的含义随 host.auth_type 而定：密码认证时是登录密码，密钥认证时是私钥口令（可空）。
+/// 机密只在这里短暂经过后端，存入钥匙串后不再返回前端。auth_type / key_path 由前端决定，后端不再覆盖。
 #[tauri::command]
-pub fn save_host_cmd(db: State<Db>, mut host: Host, password: Option<String>) -> Result<(), String> {
-    if let Some(pw) = password {
-        if !pw.is_empty() {
-            credential_vault::store(&host.id, &pw)?;
+pub fn save_host_cmd(db: State<Db>, mut host: Host, secret: Option<String>) -> Result<(), String> {
+    if let Some(s) = secret {
+        if !s.is_empty() {
+            credential_vault::store(&host.id, &s)?;
             host.credential_ref = Some(host.id.clone());
-            host.auth_type = "password".to_string();
         }
     }
     let c = db.0.lock().map_err(map_err)?;
@@ -104,21 +105,40 @@ pub async fn connect_cmd(
     cols: u32,
     rows: u32,
 ) -> Result<(), String> {
-    // —— 同步段：取 host + 密码 + 已知指纹，随即释放锁 ——
-    let (address, port, username, password, host_key, expected_fp) = {
+    // —— 同步段：取 host + 认证凭据 + 已知指纹，随即释放锁 ——
+    let (address, port, username, auth, host_key, expected_fp) = {
         let c = db.0.lock().map_err(map_err)?;
         let host = cs::get_host(&c, &host_id)
             .map_err(map_err)?
             .ok_or_else(|| "主机不存在".to_string())?;
-        let password = match host.credential_ref.as_deref() {
-            Some(r) => credential_vault::get(r)?
-                .ok_or_else(|| "未找到该主机的已保存凭据，请先在主机编辑里填写密码".to_string())?,
-            None => return Err("该主机未配置密码凭据，请先编辑主机填写密码".to_string()),
+        // 按认证方式组装凭据：密钥口令 / 登录密码均从钥匙串按 host.id 取。
+        let auth = match host.auth_type.as_str() {
+            "key" => {
+                let path = host
+                    .key_path
+                    .clone()
+                    .filter(|p| !p.is_empty())
+                    .ok_or_else(|| "该主机未配置私钥路径，请先编辑主机选择私钥".to_string())?;
+                // 私钥口令可选：有 credential_ref 则取，取不到当作无口令。
+                let passphrase = match host.credential_ref.as_deref() {
+                    Some(r) => credential_vault::get(r)?,
+                    None => None,
+                };
+                Auth::Key { path, passphrase }
+            }
+            _ => {
+                let password = match host.credential_ref.as_deref() {
+                    Some(r) => credential_vault::get(r)?
+                        .ok_or_else(|| "未找到该主机的已保存凭据，请先在主机编辑里填写密码".to_string())?,
+                    None => return Err("该主机未配置密码凭据，请先编辑主机填写密码".to_string()),
+                };
+                Auth::Password(password)
+            }
         };
         let host_key = format!("{}:{}", host.address, host.port);
         let expected_fp = cs::get_known_fingerprint(&c, &host_key).map_err(map_err)?;
         drop(c);
-        (host.address, host.port, host.username, password, host_key, expected_fp)
+        (host.address, host.port, host.username, auth, host_key, expected_fp)
     };
 
     let is_first = expected_fp.is_none();
@@ -133,7 +153,7 @@ pub async fn connect_cmd(
         address,
         port,
         username,
-        password,
+        auth,
         expected_fp,
         cols,
         rows,

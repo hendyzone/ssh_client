@@ -41,20 +41,21 @@ fn row_to_host(r: &rusqlite::Row) -> rusqlite::Result<Host> {
         auth_type: r.get(7)?,
         credential_ref: r.get(8)?,
         proxy_jump: r.get(9)?,
+        key_path: r.get(10)?,
     })
 }
 
 pub fn upsert_host(conn: &Connection, host: &Host) -> rusqlite::Result<()> {
     let tags_json = serde_json::to_string(&host.tags).unwrap();
     conn.execute(
-        "INSERT INTO hosts (id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
+        "INSERT INTO hosts (id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump, key_path)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
          ON CONFLICT(id) DO UPDATE SET
            name=?2, address=?3, port=?4, username=?5, group_id=?6,
-           tags=?7, auth_type=?8, credential_ref=?9, proxy_jump=?10",
+           tags=?7, auth_type=?8, credential_ref=?9, proxy_jump=?10, key_path=?11",
         rusqlite::params![
             host.id, host.name, host.address, host.port, host.username,
-            host.group_id, tags_json, host.auth_type, host.credential_ref, host.proxy_jump
+            host.group_id, tags_json, host.auth_type, host.credential_ref, host.proxy_jump, host.key_path
         ],
     )?;
     Ok(())
@@ -62,7 +63,7 @@ pub fn upsert_host(conn: &Connection, host: &Host) -> rusqlite::Result<()> {
 
 pub fn list_hosts(conn: &Connection) -> rusqlite::Result<Vec<Host>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump
+        "SELECT id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump, key_path
          FROM hosts ORDER BY name",
     )?;
     let rows = stmt.query_map([], row_to_host)?;
@@ -71,7 +72,7 @@ pub fn list_hosts(conn: &Connection) -> rusqlite::Result<Vec<Host>> {
 
 pub fn get_host(conn: &Connection, id: &str) -> rusqlite::Result<Option<Host>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump
+        "SELECT id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump, key_path
          FROM hosts WHERE id = ?1",
     )?;
     let mut rows = stmt.query_map(rusqlite::params![id], row_to_host)?;
@@ -149,6 +150,7 @@ mod tests {
             auth_type: "password".into(),
             credential_ref: None,
             proxy_jump: None,
+            key_path: None,
         }
     }
 
@@ -164,6 +166,20 @@ mod tests {
         let got = get_host(&c, "h1").unwrap().unwrap();
         assert_eq!(got.name, "web1-renamed");
         assert_eq!(got.tags, vec!["prod".to_string(), "web".to_string()]);
+    }
+
+    #[test]
+    fn key_auth_fields_roundtrip() {
+        let c = mem();
+        let mut h = sample_host("hk");
+        h.auth_type = "key".into();
+        h.key_path = Some("/home/me/.ssh/id_ed25519".into());
+        h.credential_ref = Some("hk".into());
+        upsert_host(&c, &h).unwrap();
+        let got = get_host(&c, "hk").unwrap().unwrap();
+        assert_eq!(got.auth_type, "key");
+        assert_eq!(got.key_path.as_deref(), Some("/home/me/.ssh/id_ed25519"));
+        assert_eq!(got.credential_ref.as_deref(), Some("hk"));
     }
 
     #[test]

@@ -16,19 +16,24 @@ export function HostForm({
 }: {
   groups: Group[];
   initial: Host | null;
-  onSubmit: (host: Host, password: string | null) => void;
+  // secret 含义随认证方式而定：密码登录为密码，密钥登录为私钥口令（可空）
+  onSubmit: (host: Host, secret: string | null) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [address, setAddress] = useState(initial?.address ?? "");
   const [port, setPort] = useState(String(initial?.port ?? 22));
   const [username, setUsername] = useState(initial?.username ?? "");
+  const [authType, setAuthType] = useState(initial?.authType === "key" ? "key" : "password");
   const [password, setPassword] = useState("");
+  const [keyPath, setKeyPath] = useState(initial?.keyPath ?? "");
+  const [passphrase, setPassphrase] = useState("");
   const [groupId, setGroupId] = useState(initial?.groupId ?? "");
   const [tags, setTags] = useState((initial?.tags ?? []).join(", "));
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    const isKey = authType === "key";
     const host: Host = {
       id: initial?.id ?? newId(),
       name,
@@ -37,11 +42,13 @@ export function HostForm({
       username,
       groupId: groupId || null,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-      authType: "password",
+      authType,
       credentialRef: initial?.credentialRef ?? null,
       proxyJump: initial?.proxyJump ?? null,
+      keyPath: isKey ? (keyPath.trim() || null) : null,
     };
-    onSubmit(host, password ? password : null);
+    const secret = isKey ? passphrase : password;
+    onSubmit(host, secret ? secret : null);
   };
 
   // 统一渲染文本输入字段（带 aria-label 供测试选取）
@@ -68,7 +75,21 @@ export function HostForm({
           <div style={{ flex: 1 }}>{field("端口", port, setPort)}</div>
         </div>
         {field("用户名", username, setUsername, "text", "root")}
-        {field("密码", password, setPassword, "password", initial ? "留空则不修改" : "")}
+        <label className="field">
+          <span className="field__label">认证方式</span>
+          <select aria-label="认证方式" value={authType} onChange={(e) => setAuthType(e.target.value)}>
+            <option value="password">密码</option>
+            <option value="key">密钥</option>
+          </select>
+        </label>
+        {authType === "password"
+          ? field("密码", password, setPassword, "password", initial ? "留空则不修改" : "")
+          : (
+            <>
+              {field("私钥路径", keyPath, setKeyPath, "text", "如 ~/.ssh/id_ed25519")}
+              {field("私钥口令", passphrase, setPassphrase, "password", initial ? "留空则不修改 / 无口令" : "无口令可留空")}
+            </>
+          )}
         <label className="field">
           <span className="field__label">分组</span>
           <select aria-label="分组" value={groupId} onChange={(e) => setGroupId(e.target.value)}>

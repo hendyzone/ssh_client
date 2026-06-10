@@ -4,10 +4,21 @@
 //! 注意：russh 0.61 的 API 与早期版本（0.45）差异较大，下方均按 0.61 实现。
 
 use russh::client;
-use russh::keys::ssh_key;
+use russh::keys::{load_secret_key, ssh_key, PrivateKeyWithHashAlg};
 use russh::ChannelMsg;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+
+/// 认证方式：密码或私钥（私钥可带口令）。
+pub enum Auth {
+    Password(String),
+    Key {
+        /// 私钥文件路径。
+        path: String,
+        /// 私钥口令（passphrase），无口令则为 None。
+        passphrase: Option<String>,
+    },
+}
 
 /// 客户端回调处理器，携带 TOFU 指纹校验状态。
 pub struct Client {
@@ -43,15 +54,15 @@ impl client::Handler for Client {
     }
 }
 
-/// 用密码建立已认证的 SSH 连接，附带 TOFU 指纹校验。
+/// 建立已认证的 SSH 连接（密码或密钥），附带 TOFU 指纹校验。
 ///
 /// `expected_fp`：known_hosts 中该主机的已知指纹；None 表示首次连接。
 /// 返回 `(已认证句柄, 服务器实际公钥指纹)`；指纹变更时返回语义化错误。
-pub async fn connect_password(
+pub async fn connect(
     addr: &str,
     port: u16,
     username: &str,
-    password: &str,
+    auth: Auth,
     expected_fp: Option<String>,
 ) -> Result<(client::Handle<Client>, String), String> {
     let config = Arc::new(client::Config::default());
@@ -73,16 +84,44 @@ pub async fn connect_password(
         }
     };
 
-    let auth = handle
-        .authenticate_password(username, password)
-        .await
-        .map_err(|e| e.to_string())?;
-    if !auth.success() {
-        return Err("认证失败：用户名或密码错误".to_string());
+    let ok = match auth {
+        Auth::Password(password) => handle
+            .authenticate_password(username, password)
+            .await
+            .map_err(|e| e.to_string())?
+            .success(),
+        Auth::Key { path, passphrase } => {
+            let key = load_secret_key(&path, passphrase.as_deref())
+                .map_err(|e| format!("加载私钥失败（{path}）：{e}"))?;
+            let key = Arc::new(key);
+            // RSA 私钥需选哈希算法（多数服务器已拒绝 SHA-1 的 ssh-rsa）；
+            // 非 RSA 时 PrivateKeyWithHashAlg 会忽略该参数。
+            let hash = handle.best_supported_rsa_hash().await.ok().flatten().flatten();
+            handle
+                .authenticate_publickey(username, PrivateKeyWithHashAlg::new(key, hash))
+                .await
+                .map_err(|e| e.to_string())?
+                .success()
+        }
+    };
+    if !ok {
+        return Err("认证失败：凭据被服务器拒绝（请检查用户名 / 密码 / 私钥）".to_string());
     }
 
     let fp = actual_fp.lock().unwrap().clone().unwrap_or_default();
     Ok((handle, fp))
+}
+
+/// 便捷包装：用密码连接（保留供集成测试与简单调用）。
+#[allow(dead_code)]
+pub async fn connect_password(
+    addr: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    expected_fp: Option<String>,
+) -> Result<(client::Handle<Client>, String), String> {
+    connect(addr, port, username, Auth::Password(password.to_string()), expected_fp).await
 }
 
 /// 发给一个 PTY 会话任务的指令。

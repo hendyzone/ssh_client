@@ -3,7 +3,7 @@
 //! 复用 `ssh_session` 已有的 `connect_password` / `PtySession` / `Cmd`，
 //! 不在此重复定义 `Cmd`。
 
-use crate::ssh_session::{connect_password, Cmd, PtySession};
+use crate::ssh_session::{connect, Auth, Cmd, PtySession};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::sync::mpsc;
@@ -40,14 +40,14 @@ pub async fn spawn_session(
     addr: String,
     port: u16,
     username: String,
-    password: String,
+    auth: Auth,
     expected_fp: Option<String>,
     cols: u32,
     rows: u32,
     on_data: impl Fn(Vec<u8>) + Send + 'static,
     on_close: impl Fn() + Send + 'static,
 ) -> Result<(mpsc::UnboundedSender<Cmd>, String), String> {
-    let (handle, fp) = connect_password(&addr, port, &username, &password, expected_fp).await?;
+    let (handle, fp) = connect(&addr, port, &username, auth, expected_fp).await?;
     let session = PtySession::open(&handle, cols, rows)
         .await
         .map_err(|e| e.to_string())?;
@@ -73,7 +73,7 @@ mod tests {
             "127.0.0.1".into(),
             2222,
             "tester".into(),
-            "testpass".into(),
+            Auth::Password("testpass".into()),
             None,
             80,
             24,

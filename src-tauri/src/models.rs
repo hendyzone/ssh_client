@@ -18,7 +18,8 @@ pub struct Host {
     pub username: String,
     pub group_id: Option<String>,
     pub tags: Vec<String>,
-    pub auth_type: String,          // "password" | "key" | "agent"
-    pub credential_ref: Option<String>,
+    pub auth_type: String,          // "password" | "key"
+    pub credential_ref: Option<String>, // 钥匙串账户名（密码 / 密钥口令）= host.id
     pub proxy_jump: Option<String>,
+    pub key_path: Option<String>,   // auth_type=="key" 时的私钥文件路径
 }

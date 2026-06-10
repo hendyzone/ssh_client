@@ -15,9 +15,10 @@ export interface Host {
   username: string;
   groupId: string | null;
   tags: string[];
-  authType: string;
+  authType: string; // "password" | "key"
   credentialRef: string | null;
   proxyJump: string | null;
+  keyPath: string | null; // authType==="key" 时的私钥文件路径
 }
 
 export const api = {
@@ -28,8 +29,9 @@ export const api = {
   deleteGroup: (id: string) => invoke<void>("delete_group_cmd", { id }),
   listHosts: () => invoke<Host[]>("list_hosts_cmd"),
   upsertHost: (host: Host) => invoke<void>("upsert_host_cmd", { host }),
-  saveHost: (host: Host, password: string | null) =>
-    invoke<void>("save_host_cmd", { host, password }),
+  // secret 含义随 authType 而定：密码认证为登录密码，密钥认证为私钥口令（可空）
+  saveHost: (host: Host, secret: string | null) =>
+    invoke<void>("save_host_cmd", { host, secret }),
   deleteHost: (id: string) => invoke<void>("delete_host_cmd", { id }),
 };
 
