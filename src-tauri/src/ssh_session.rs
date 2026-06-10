@@ -74,13 +74,22 @@ pub async fn connect(
         mismatch: mismatch.clone(),
     };
 
-    let mut handle = match client::connect(config, (addr, port), client).await {
-        Ok(h) => h,
-        Err(e) => {
+    // 加连接超时：连不存在 / 不可达的主机时 TCP 会一直等系统级超时（可能数十秒），
+    // 这里限定 15 秒内必须建链，否则快速失败并给出明确错误。
+    let connect_fut = client::connect(config, (addr, port), client);
+    let mut handle = match tokio::time::timeout(std::time::Duration::from_secs(15), connect_fut).await
+    {
+        Ok(Ok(h)) => h,
+        Ok(Err(e)) => {
             if *mismatch.lock().unwrap() {
                 return Err("主机公钥指纹已变更，可能存在中间人攻击风险，已拒绝连接".to_string());
             }
-            return Err(e.to_string());
+            return Err(format!("无法连接到 {addr}:{port}：{e}"));
+        }
+        Err(_) => {
+            return Err(format!(
+                "连接超时：15 秒内无法连接到 {addr}:{port}，请检查地址 / 端口 / 网络是否可达"
+            ));
         }
     };
 

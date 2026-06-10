@@ -15,7 +15,9 @@ export function TerminalView({
   const ref = useRef<HTMLDivElement>(null);
   // attempt 每 +1 触发 effect 重跑以重连
   const [attempt, setAttempt] = useState(0);
-  const [closed, setClosed] = useState(false);
+  // 连接阶段：connecting=建链中 / open=已连上 / closed=已断开或失败
+  const [phase, setPhase] = useState<"connecting" | "open" | "closed">("connecting");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -23,7 +25,8 @@ export function TerminalView({
     // 以及旧事件监听串入新终端。
     const connId = `${sessionId}#${attempt}`;
     let disposed = false;
-    setClosed(false);
+    setPhase("connecting");
+    setError(null);
 
     const term = new Terminal({
       fontSize: 13.5,
@@ -70,15 +73,19 @@ export function TerminalView({
         session.onClosed(connId, () => {
           if (disposed) return;
           term.write("\r\n[已断开]\r\n");
-          setClosed(true);
+          setPhase("closed");
         }),
       );
       try {
         await session.connect({ sessionId: connId, hostId, cols: term.cols, rows: term.rows });
+        // connect 成功返回时后端已完成认证 + 开 PTY，会话就绪
+        if (!disposed) setPhase("open");
       } catch (e) {
         if (!disposed) {
-          term.write(`\r\n[连接失败] ${e}\r\n`);
-          setClosed(true);
+          const msg = e instanceof Error ? e.message : String(e);
+          term.write(`\r\n[连接失败] ${msg}\r\n`);
+          setError(msg);
+          setPhase("closed");
         }
       }
     })();
@@ -107,9 +114,18 @@ export function TerminalView({
   return (
     <div className="terminal-view">
       <div ref={ref} className="terminal-view__xterm" />
-      {closed && (
+      {phase === "connecting" && (
         <div className="terminal-overlay">
-          <span className="terminal-overlay__msg">连接已断开</span>
+          <span className="spinner" aria-hidden />
+          <span className="terminal-overlay__msg">正在连接…</span>
+        </div>
+      )}
+      {phase === "closed" && (
+        <div className="terminal-overlay">
+          <span className="terminal-overlay__title">
+            {error ? "连接失败" : "连接已断开"}
+          </span>
+          {error && <span className="terminal-overlay__err">{error}</span>}
           <button className="btn-primary" onClick={() => setAttempt((n) => n + 1)}>
             重新连接
           </button>

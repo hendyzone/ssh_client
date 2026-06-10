@@ -454,6 +454,33 @@ kbd {
   color: var(--text-dim);
   font-size: 13px;
 }
+.terminal-overlay__title {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+.terminal-overlay__err {
+  max-width: 70%;
+  text-align: center;
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* 旋转加载指示 */
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* 空状态 */
 .empty-state {
