@@ -23,7 +23,9 @@ export function TerminalView({
     if (!ref.current) return;
     // 每次（重）连接用唯一的后端会话 id，避免重连时旧 close 与新 connect 竞态，
     // 以及旧事件监听串入新终端。
-    const connId = `${sessionId}#${attempt}`;
+    // 分隔符必须用 Tauri 事件名合法字符（字母数字/-//:/_），不能用 '#'，
+    // 否则 emit("ssh://<id>/data") 会因非法事件名被静默拒绝，导致终端无任何输入输出。
+    const connId = `${sessionId}:${attempt}`;
     let disposed = false;
     setPhase("connecting");
     setError(null);
