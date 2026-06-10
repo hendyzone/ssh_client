@@ -45,40 +45,44 @@ export function HostForm({
   };
 
   // 统一渲染文本输入字段（带 aria-label 供测试选取）
-  const field = (label: string, value: string, set: (v: string) => void, type = "text") => (
-    <label style={{ display: "block", marginBottom: 8 }}>
-      <span style={{ display: "inline-block", width: 64 }}>{label}</span>
+  const field = (label: string, value: string, set: (v: string) => void, type = "text", placeholder = "") => (
+    <label className="field">
+      <span className="field__label">{label}</span>
       <input
         aria-label={label}
         type={type}
         value={value}
+        placeholder={placeholder}
         onChange={(e) => set(e.target.value)}
-        style={{ width: 200 }}
       />
     </label>
   );
 
   return (
-    <form onSubmit={submit} style={{ padding: 16, border: "1px solid #444", background: "#222" }}>
-      <h3>{initial ? "编辑主机" : "新增主机"}</h3>
-      {field("名称", name, setName)}
-      {field("地址", address, setAddress)}
-      {field("端口", port, setPort)}
-      {field("用户名", username, setUsername)}
-      {field("密码", password, setPassword, "password")}
-      <label style={{ display: "block", marginBottom: 8 }}>
-        <span style={{ display: "inline-block", width: 64 }}>分组</span>
-        <select aria-label="分组" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
-          <option value="">未分组</option>
-          {groups.map((g) => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-        </select>
-      </label>
-      {field("标签", tags, setTags)}
-      <div style={{ marginTop: 12 }}>
-        <button type="submit">保存</button>
-        <button type="button" onClick={onCancel} style={{ marginLeft: 8 }}>取消</button>
+    <form className="modal-card" onSubmit={submit}>
+      <h3 className="modal-card__title">{initial ? "编辑主机" : "新增主机"}</h3>
+      <div className="modal-card__body">
+        {field("名称", name, setName, "text", "例如：生产 Web 服务器")}
+        <div className="field-row">
+          <div style={{ flex: 3 }}>{field("地址", address, setAddress, "text", "IP 或域名")}</div>
+          <div style={{ flex: 1 }}>{field("端口", port, setPort)}</div>
+        </div>
+        {field("用户名", username, setUsername, "text", "root")}
+        {field("密码", password, setPassword, "password", initial ? "留空则不修改" : "")}
+        <label className="field">
+          <span className="field__label">分组</span>
+          <select aria-label="分组" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+            <option value="">未分组</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </label>
+        {field("标签", tags, setTags, "text", "逗号分隔，如：web, 生产")}
+      </div>
+      <div className="modal-card__footer">
+        <button type="button" className="btn-ghost" onClick={onCancel}>取消</button>
+        <button type="submit" className="btn-primary">保存</button>
       </div>
     </form>
   );

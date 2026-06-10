@@ -15,29 +15,22 @@ export function TabBar({
   // 无标签时不渲染
   if (tabs.length === 0) return null;
   return (
-    <div style={{ display: "flex", borderBottom: "1px solid #333", background: "#1a1a1a" }}>
+    <div className="tabbar">
       {tabs.map((t) => (
         <div
           key={t.sessionId}
           onClick={() => onSelect(t.sessionId)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            padding: "6px 10px",
-            cursor: "pointer",
-            background: t.sessionId === activeId ? "#333" : "transparent",
-            borderRight: "1px solid #333",
-          }}
+          className={t.sessionId === activeId ? "tab active" : "tab"}
         >
-          <span>{t.title}</span>
+          <span className="tab__title">{t.title}</span>
           {/* 关闭按钮：stopPropagation 阻止冒泡，避免同时触发 onSelect */}
           <button
+            className="tab__close"
             aria-label={`关闭 ${t.title}`}
             onClick={(e) => {
               e.stopPropagation();
               onClose(t.sessionId);
             }}
-            style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "#aaa" }}
           >
             ×
           </button>

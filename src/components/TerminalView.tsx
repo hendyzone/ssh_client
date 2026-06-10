@@ -25,7 +25,37 @@ export function TerminalView({
     let disposed = false;
     setClosed(false);
 
-    const term = new Terminal({ fontSize: 14, convertEol: false });
+    const term = new Terminal({
+      fontSize: 13.5,
+      fontFamily:
+        '"JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, Menlo, monospace',
+      lineHeight: 1.2,
+      cursorBlink: true,
+      convertEol: false,
+      theme: {
+        background: "#0d1117",
+        foreground: "#e6edf3",
+        cursor: "#2dd4bf",
+        cursorAccent: "#0d1117",
+        selectionBackground: "rgba(45,212,191,0.25)",
+        black: "#0d1117",
+        brightBlack: "#647082",
+        red: "#f87171",
+        brightRed: "#fca5a5",
+        green: "#4ade80",
+        brightGreen: "#86efac",
+        yellow: "#fbbf24",
+        brightYellow: "#fcd34d",
+        blue: "#60a5fa",
+        brightBlue: "#93c5fd",
+        magenta: "#c084fc",
+        brightMagenta: "#d8b4fe",
+        cyan: "#2dd4bf",
+        brightCyan: "#5eead4",
+        white: "#cbd5e1",
+        brightWhite: "#f1f5f9",
+      },
+    });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(ref.current);
@@ -75,11 +105,12 @@ export function TerminalView({
   }, [sessionId, hostId, attempt]);
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <div ref={ref} style={{ width: "100%", height: "100%" }} />
+    <div className="terminal-view">
+      <div ref={ref} className="terminal-view__xterm" />
       {closed && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)" }}>
-          <button onClick={() => setAttempt((n) => n + 1)} style={{ padding: "8px 16px" }}>
+        <div className="terminal-overlay">
+          <span className="terminal-overlay__msg">连接已断开</span>
+          <button className="btn-primary" onClick={() => setAttempt((n) => n + 1)}>
             重新连接
           </button>
         </div>

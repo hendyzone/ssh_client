@@ -42,13 +42,23 @@ function App() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
+    <div className="app">
       <Sidebar onConnect={handleConnect} onNewHost={openNew} onEditHost={openEdit} />
-      <main style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column" }} data-testid="terminal-area">
+      <main className="main" data-testid="terminal-area">
         <TabBar tabs={tabs} activeId={activeId} onSelect={setActive} onClose={close} />
-        <div style={{ flex: 1, position: "relative" }}>
+        <div className="terminal-stack">
           {tabs.length === 0 && (
-            <div style={{ padding: 16, color: "#888" }}>从左侧选择主机以连接（Ctrl+K 快速搜索）</div>
+            <div className="empty-state">
+              <svg className="empty-state__icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2.5" y="4" width="19" height="16" rx="2.5" />
+                <path d="M6.5 9l3 3-3 3" />
+                <path d="M12 15h5" />
+              </svg>
+              <div className="empty-state__title">未连接任何主机</div>
+              <div className="empty-state__hint">
+                从左侧选择主机，或按 <kbd>Ctrl</kbd> <kbd>K</kbd> 快速搜索
+              </div>
+            </div>
           )}
           {/* 所有会话保持挂载，非激活用 display:none 隐藏，避免切换时断开会话 */}
           {tabs.map((t) => (
@@ -65,7 +75,7 @@ function App() {
           ))}
         </div>
         {formOpen && (
-          <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="overlay overlay--center">
             <HostForm groups={groups} initial={editing} onSubmit={submitForm} onCancel={() => setFormOpen(false)} />
           </div>
         )}

@@ -19,10 +19,14 @@ export function CommandPalette({
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
 
-  // 每次打开时清空查询
+  // 每次打开时清空查询并重置高亮
   useEffect(() => {
-    if (open) setQuery("");
+    if (open) {
+      setQuery("");
+      setActive(0);
+    }
   }, [open]);
 
   const matches = useMemo(() => {
@@ -33,6 +37,11 @@ export function CommandPalette({
     );
   }, [query, hosts]);
 
+  // 查询变化后把高亮夹回有效范围
+  useEffect(() => {
+    setActive((i) => Math.min(i, Math.max(0, matches.length - 1)));
+  }, [matches.length]);
+
   if (!open) return null;
 
   const pick = (hostId: string) => {
@@ -41,30 +50,10 @@ export function CommandPalette({
   };
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex",
-        justifyContent: "center",
-        paddingTop: 80,
-        zIndex: 1000,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 420,
-          background: "#222",
-          border: "1px solid #444",
-          borderRadius: 6,
-          overflow: "hidden",
-          height: "fit-content",
-        }}
-      >
+    <div className="overlay overlay--top" onClick={onClose}>
+      <div className="palette" onClick={(e) => e.stopPropagation()}>
         <input
+          className="palette__search"
           aria-label="搜索主机"
           autoFocus
           value={query}
@@ -72,37 +61,33 @@ export function CommandPalette({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Escape") onClose();
-            if (e.key === "Enter" && matches.length > 0) pick(matches[0].id);
-          }}
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            padding: 12,
-            background: "#1a1a1a",
-            border: "none",
-            color: "#eee",
-            outline: "none",
+            else if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setActive((i) => Math.min(i + 1, matches.length - 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActive((i) => Math.max(i - 1, 0));
+            } else if (e.key === "Enter" && matches[active]) {
+              pick(matches[active].id);
+            }
           }}
         />
-        <div style={{ maxHeight: 320, overflow: "auto" }}>
-          {matches.map((h) => (
+        <div className="palette__list">
+          {matches.map((h, i) => (
             <div
               key={h.id}
               onClick={() => pick(h.id)}
-              style={{
-                padding: "8px 12px",
-                cursor: "pointer",
-                borderTop: "1px solid #333",
-              }}
+              onMouseEnter={() => setActive(i)}
+              className={i === active ? "palette__item active" : "palette__item"}
             >
-              <div>{h.name}</div>
-              <div style={{ fontSize: 12, color: "#888" }}>
+              <span className="palette__item-name">{h.name}</span>
+              <span className="palette__item-sub">
                 {h.username}@{h.address}:{h.port}
-              </div>
+              </span>
             </div>
           ))}
           {matches.length === 0 && (
-            <div style={{ padding: 12, color: "#888" }}>无匹配主机</div>
+            <div className="palette__empty">无匹配主机</div>
           )}
         </div>
       </div>
