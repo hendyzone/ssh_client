@@ -44,11 +44,12 @@ pub async fn spawn_session(
     expected_fp: Option<String>,
     cols: u32,
     rows: u32,
+    command: Option<String>,
     on_data: impl Fn(Vec<u8>) + Send + 'static,
     on_close: impl Fn() + Send + 'static,
 ) -> Result<(mpsc::UnboundedSender<Cmd>, String), String> {
     let (handle, fp) = connect(&addr, port, &username, auth, expected_fp).await?;
-    let session = PtySession::open(&handle, cols, rows)
+    let session = PtySession::open(&handle, cols, rows, command)
         .await
         .map_err(|e| e.to_string())?;
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<Cmd>();
@@ -77,6 +78,7 @@ mod tests {
             None,
             80,
             24,
+            None,
             move |chunk| {
                 let _ = out_tx.send(chunk);
             },

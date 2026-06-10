@@ -26,7 +26,7 @@ describe("HostForm", () => {
     const initial = {
       id: "h1", name: "old", address: "1.1.1.1", port: 2222, username: "u",
       groupId: null, tags: [], authType: "password", credentialRef: "h1", proxyJump: null,
-      keyPath: null,
+      keyPath: null, useTmux: false, tmuxSession: null,
     };
     render(<HostForm groups={[]} initial={initial} onSubmit={onSubmit} onCancel={vi.fn()} />);
     expect((screen.getByLabelText("名称") as HTMLInputElement).value).toBe("old");
@@ -54,5 +54,19 @@ describe("HostForm", () => {
     expect(host.authType).toBe("key");
     expect(host.keyPath).toBe("~/.ssh/id_ed25519");
     expect(secret).toBe("pp");
+  });
+
+  it("勾选断线保持会话后，host 带 useTmux 与 tmuxSession", () => {
+    const onSubmit = vi.fn();
+    render(<HostForm groups={[]} initial={null} onSubmit={onSubmit} onCancel={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "t1" } });
+    // 默认不显示会话名输入
+    expect(screen.queryByLabelText("tmux 会话名")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("断线保持会话"));
+    fireEvent.change(screen.getByLabelText("tmux 会话名"), { target: { value: "work" } });
+    fireEvent.click(screen.getByText("保存"));
+    const [host] = onSubmit.mock.calls[0];
+    expect(host.useTmux).toBe(true);
+    expect(host.tmuxSession).toBe("work");
   });
 });

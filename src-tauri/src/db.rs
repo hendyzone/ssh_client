@@ -22,7 +22,9 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             auth_type TEXT NOT NULL,
             credential_ref TEXT,
             proxy_jump TEXT,
-            key_path TEXT
+            key_path TEXT,
+            use_tmux INTEGER NOT NULL DEFAULT 0,
+            tmux_session TEXT
         );
         CREATE TABLE IF NOT EXISTS known_hosts (
             host TEXT PRIMARY KEY,
@@ -30,8 +32,10 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         );
         ",
     )?;
-    // 迁移：为早期版本建立的库补 key_path 列（已存在则忽略错误，保持幂等）。
+    // 迁移：为早期版本建立的库补列（已存在则跳过，保持幂等）。
     add_column_if_missing(conn, "hosts", "key_path", "TEXT")?;
+    add_column_if_missing(conn, "hosts", "use_tmux", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column_if_missing(conn, "hosts", "tmux_session", "TEXT")?;
     Ok(())
 }
 

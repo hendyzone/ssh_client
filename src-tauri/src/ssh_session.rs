@@ -154,18 +154,24 @@ pub struct PtySession {
 }
 
 impl PtySession {
-    /// 在已认证连接上请求一个 PTY 并启动 shell。
+    /// 在已认证连接上请求一个 PTY，启动交互式 shell 或指定命令。
+    ///
+    /// `command`：Some 时在 PTY 上 exec 该命令（如 tmux 包裹命令），None 时启动登录 shell。
     pub async fn open(
         handle: &client::Handle<Client>,
         cols: u32,
         rows: u32,
+        command: Option<String>,
     ) -> Result<Self, russh::Error> {
         let channel = handle.channel_open_session().await?;
         // request_pty: want_reply=false, term, 列/行, 像素宽/高=0, terminal_modes=空。
         channel
             .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
             .await?;
-        channel.request_shell(false).await?;
+        match command {
+            Some(cmd) => channel.exec(false, cmd).await?,
+            None => channel.request_shell(false).await?,
+        }
         Ok(PtySession { channel })
     }
 
@@ -247,7 +253,7 @@ mod tests {
         let (h, _fp) = connect_password("127.0.0.1", 2222, "tester", "testpass", None)
             .await
             .unwrap();
-        let session = PtySession::open(&h, 80, 24).await.unwrap();
+        let session = PtySession::open(&h, 80, 24, None).await.unwrap();
 
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Vec<u8>>();

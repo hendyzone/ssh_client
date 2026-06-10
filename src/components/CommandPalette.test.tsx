@@ -5,8 +5,8 @@ import { CommandPalette } from "./CommandPalette";
 import type { Host } from "../ipc";
 
 const hosts: Host[] = [
-  { id: "h1", name: "web-prod", address: "10.0.0.1", port: 22, username: "root", groupId: null, tags: ["prod"], authType: "password", credentialRef: "h1", proxyJump: null, keyPath: null },
-  { id: "h2", name: "db-test", address: "10.0.0.2", port: 22, username: "root", groupId: null, tags: ["test"], authType: "password", credentialRef: "h2", proxyJump: null, keyPath: null },
+  { id: "h1", name: "web-prod", address: "10.0.0.1", port: 22, username: "root", groupId: null, tags: ["prod"], authType: "password", credentialRef: "h1", proxyJump: null, keyPath: null, useTmux: false, tmuxSession: null },
+  { id: "h2", name: "db-test", address: "10.0.0.2", port: 22, username: "root", groupId: null, tags: ["test"], authType: "password", credentialRef: "h2", proxyJump: null, keyPath: null, useTmux: false, tmuxSession: null },
 ];
 
 describe("CommandPalette", () => {

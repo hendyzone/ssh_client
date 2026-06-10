@@ -42,20 +42,24 @@ fn row_to_host(r: &rusqlite::Row) -> rusqlite::Result<Host> {
         credential_ref: r.get(8)?,
         proxy_jump: r.get(9)?,
         key_path: r.get(10)?,
+        use_tmux: r.get(11)?,
+        tmux_session: r.get(12)?,
     })
 }
 
 pub fn upsert_host(conn: &Connection, host: &Host) -> rusqlite::Result<()> {
     let tags_json = serde_json::to_string(&host.tags).unwrap();
     conn.execute(
-        "INSERT INTO hosts (id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump, key_path)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+        "INSERT INTO hosts (id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump, key_path, use_tmux, tmux_session)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
          ON CONFLICT(id) DO UPDATE SET
            name=?2, address=?3, port=?4, username=?5, group_id=?6,
-           tags=?7, auth_type=?8, credential_ref=?9, proxy_jump=?10, key_path=?11",
+           tags=?7, auth_type=?8, credential_ref=?9, proxy_jump=?10, key_path=?11,
+           use_tmux=?12, tmux_session=?13",
         rusqlite::params![
             host.id, host.name, host.address, host.port, host.username,
-            host.group_id, tags_json, host.auth_type, host.credential_ref, host.proxy_jump, host.key_path
+            host.group_id, tags_json, host.auth_type, host.credential_ref, host.proxy_jump, host.key_path,
+            host.use_tmux, host.tmux_session
         ],
     )?;
     Ok(())
@@ -63,7 +67,7 @@ pub fn upsert_host(conn: &Connection, host: &Host) -> rusqlite::Result<()> {
 
 pub fn list_hosts(conn: &Connection) -> rusqlite::Result<Vec<Host>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump, key_path
+        "SELECT id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump, key_path, use_tmux, tmux_session
          FROM hosts ORDER BY name",
     )?;
     let rows = stmt.query_map([], row_to_host)?;
@@ -72,7 +76,7 @@ pub fn list_hosts(conn: &Connection) -> rusqlite::Result<Vec<Host>> {
 
 pub fn get_host(conn: &Connection, id: &str) -> rusqlite::Result<Option<Host>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump, key_path
+        "SELECT id, name, address, port, username, group_id, tags, auth_type, credential_ref, proxy_jump, key_path, use_tmux, tmux_session
          FROM hosts WHERE id = ?1",
     )?;
     let mut rows = stmt.query_map(rusqlite::params![id], row_to_host)?;
@@ -151,6 +155,8 @@ mod tests {
             credential_ref: None,
             proxy_jump: None,
             key_path: None,
+            use_tmux: false,
+            tmux_session: None,
         }
     }
 
@@ -180,6 +186,18 @@ mod tests {
         assert_eq!(got.auth_type, "key");
         assert_eq!(got.key_path.as_deref(), Some("/home/me/.ssh/id_ed25519"));
         assert_eq!(got.credential_ref.as_deref(), Some("hk"));
+    }
+
+    #[test]
+    fn tmux_fields_roundtrip() {
+        let c = mem();
+        let mut h = sample_host("ht");
+        h.use_tmux = true;
+        h.tmux_session = Some("work".into());
+        upsert_host(&c, &h).unwrap();
+        let got = get_host(&c, "ht").unwrap().unwrap();
+        assert!(got.use_tmux);
+        assert_eq!(got.tmux_session.as_deref(), Some("work"));
     }
 
     #[test]

@@ -28,6 +28,8 @@ export function HostForm({
   const [password, setPassword] = useState("");
   const [keyPath, setKeyPath] = useState(initial?.keyPath ?? "");
   const [passphrase, setPassphrase] = useState("");
+  const [useTmux, setUseTmux] = useState(initial?.useTmux ?? false);
+  const [tmuxSession, setTmuxSession] = useState(initial?.tmuxSession ?? "");
   const [groupId, setGroupId] = useState(initial?.groupId ?? "");
   const [tags, setTags] = useState((initial?.tags ?? []).join(", "));
 
@@ -46,6 +48,8 @@ export function HostForm({
       credentialRef: initial?.credentialRef ?? null,
       proxyJump: initial?.proxyJump ?? null,
       keyPath: isKey ? (keyPath.trim() || null) : null,
+      useTmux,
+      tmuxSession: useTmux ? (tmuxSession.trim() || null) : null,
     };
     const secret = isKey ? passphrase : password;
     onSubmit(host, secret ? secret : null);
@@ -100,6 +104,16 @@ export function HostForm({
           </select>
         </label>
         {field("标签", tags, setTags, "text", "逗号分隔，如：web, 生产")}
+        <label className="field-check">
+          <input
+            type="checkbox"
+            aria-label="断线保持会话"
+            checked={useTmux}
+            onChange={(e) => setUseTmux(e.target.checked)}
+          />
+          <span>断线保持会话（tmux，重连可恢复）</span>
+        </label>
+        {useTmux && field("tmux 会话名", tmuxSession, setTmuxSession, "text", "默认 main")}
       </div>
       <div className="modal-card__footer">
         <button type="button" className="btn-ghost" onClick={onCancel}>取消</button>

@@ -19,6 +19,8 @@ export interface Host {
   credentialRef: string | null;
   proxyJump: string | null;
   keyPath: string | null; // authType==="key" 时的私钥文件路径
+  useTmux: boolean; // 用 tmux 包裹会话，断线重连可恢复
+  tmuxSession: string | null; // tmux 会话名（空则默认 main）
 }
 
 export const api = {

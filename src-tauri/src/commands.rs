@@ -20,6 +20,26 @@ fn map_err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// 若主机开启 tmux，构造在 PTY 上 exec 的命令：接入或新建同名 tmux 会话（断线重连可恢复）。
+/// 会话名仅保留 [A-Za-z0-9_-]，其余替换为 `_`，因此可安全置于单引号内。
+/// tmux 不存在时回退到登录 shell，避免直接断开造成困惑。
+fn tmux_command(host: &Host) -> Option<String> {
+    if !host.use_tmux {
+        return None;
+    }
+    let raw = host.tmux_session.as_deref().unwrap_or("main");
+    let mut name: String = raw
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    if name.is_empty() {
+        name = "main".to_string();
+    }
+    Some(format!(
+        "command -v tmux >/dev/null 2>&1 && exec tmux new-session -A -D -s '{name}' || exec \"${{SHELL:-/bin/sh}}\" -l"
+    ))
+}
+
 #[tauri::command]
 pub fn list_groups_cmd(db: State<Db>) -> Result<Vec<Group>, String> {
     let c = db.0.lock().map_err(map_err)?;
@@ -106,11 +126,12 @@ pub async fn connect_cmd(
     rows: u32,
 ) -> Result<(), String> {
     // —— 同步段：取 host + 认证凭据 + 已知指纹，随即释放锁 ——
-    let (address, port, username, auth, host_key, expected_fp) = {
+    let (address, port, username, auth, command, host_key, expected_fp) = {
         let c = db.0.lock().map_err(map_err)?;
         let host = cs::get_host(&c, &host_id)
             .map_err(map_err)?
             .ok_or_else(|| "主机不存在".to_string())?;
+        let command = tmux_command(&host);
         // 按认证方式组装凭据：密钥口令 / 登录密码均从钥匙串按 host.id 取。
         let auth = match host.auth_type.as_str() {
             "key" => {
@@ -138,7 +159,7 @@ pub async fn connect_cmd(
         let host_key = format!("{}:{}", host.address, host.port);
         let expected_fp = cs::get_known_fingerprint(&c, &host_key).map_err(map_err)?;
         drop(c);
-        (host.address, host.port, host.username, auth, host_key, expected_fp)
+        (host.address, host.port, host.username, auth, command, host_key, expected_fp)
     };
 
     let is_first = expected_fp.is_none();
@@ -157,6 +178,7 @@ pub async fn connect_cmd(
         expected_fp,
         cols,
         rows,
+        command,
         move |chunk| {
             let _ = app_data.emit(&format!("ssh://{sid_data}/data"), chunk);
         },
